@@ -1,0 +1,8 @@
+.env
+
+node_modules
+node_modules/*
+
+# Ignore the "output" directory but keep the folder itself (with .gitkeep)
+output/*
+!output/.gitkeep

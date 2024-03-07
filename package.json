@@ -1,0 +1,17 @@
+{
+  "name": "notion-pages-to-hexo-posts",
+  "version": "1.0.0",
+  "description": "Read Pages from a Notion database and convert them to markdown files for use in a Hexo blog (Or any other static site generator)",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "convert": "node index.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@notionhq/client": "^2.2.14",
+    "dotenv": "^16.4.5",
+    "notion-to-md": "^3.1.1"
+  }
+}
