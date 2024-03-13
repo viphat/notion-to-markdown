@@ -200,7 +200,29 @@ if (pageId) {
     const frontMatter = createFrontMatter(date, title, categories, author);
     const mdFile = fs.readFileSync(`./output/${pageId}.md`, 'utf8');
     fs.writeFileSync(`./output/${pageId}.md`, frontMatter + mdFile);
-    retrieveThenReplaceAllImages(pageId);
+    await retrieveThenReplaceAllImages(pageId);
+
+    // copy the output md file to a destination folder with cp command
+    let destination = `../duongdao-blog/source/_posts/`;
+
+    const cp = require('child_process');
+    cp.exec(`cp ./output/${pageId}.md ${destination}${pageId}.md`, (err, stdout, stderr) => {
+      if (err) {
+        console.error(err);
+        return;
+      }
+      console.log(stdout);
+    });
+
+    // copy the output images to a destination folder with cp command
+    destination = `../duongdao-blog/source/images/`;
+    cp.exec(`cp -a ./output/images/${pageId} ${destination}`, (err, stdout, stderr) => {
+      if (err) {
+        console.error(err);
+        return;
+      }
+      console.log(stdout);
+    });
   })();
 } else {
   // Process all pages in the database
