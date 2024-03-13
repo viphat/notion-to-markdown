@@ -11,13 +11,11 @@ const path = require('path');
 const notion = new Client({ auth: process.env.NOTION_TOKEN });
 const n2m = new NotionToMarkdown({ notionClient: notion });
 
+const databaseId = process.env.NOTION_DATABASE_ID;
 const datePropertyId = process.env.NOTION_DATE_PROPERTY_ID;
 const titlePropertyId = process.env.NOTION_TITLE_PROPERTY_ID;
 const categoriesPropertyId = process.env.NOTION_CATEGORIES_PROPERTY_ID;
 const authorPropertyId = process.env.NOTION_AUTHOR_PROPERTY_ID;
-
-// Get the page ID from the command line arguments
-const pageId = process.argv[2];
 
 const convertToMarkdown = async (pageId) => {
   const mdblocks = await n2m.pageToMarkdown(pageId);
@@ -144,11 +142,68 @@ const retrieveThenReplaceAllImages = async (pageId) => {
   return imageUrls;
 }
 
-(async() => {
-  await convertToMarkdown(pageId);
-  const [date, title, categories, author] = await retrievePageProperties(pageId);
-  const frontMatter = createFrontMatter(date, title, categories, author);
-  const mdFile = fs.readFileSync(`./output/${pageId}.md`, 'utf8');
-  fs.writeFileSync(`./output/${pageId}.md`, frontMatter + mdFile);
-  retrieveThenReplaceAllImages(pageId);
-})();
+const getPages = async (databaseId) => {
+  const pages = [];
+  let cursor = undefined;
+
+  while (true) {
+    const response = await notion.databases.query({
+      database_id: databaseId,
+      start_cursor: cursor
+    });
+
+    pages.push(...response.results);
+
+    if (!response.has_more) {
+      break;
+    }
+
+    cursor = response.next_cursor;
+  }
+
+  return pages;
+}
+
+const convertAllToMarkdown = async (pages) => {
+  for (const page of pages) {
+    const pageId = page.id;
+    const filePath = `./output/${pageId}.md`;
+    if (fs.existsSync(filePath)) {
+      console.log(`Skipping ${pageId} as it has already been processed`);
+      continue;
+    }
+
+    console.log(`Processing ${pageId}`);
+    // print page title to console
+    console.log(page.properties['Tiêu đề'].title[0].plain_text);
+    const [date, title, categories, author] = await retrievePageProperties(pageId);
+    await convertToMarkdown(pageId);
+    const frontMatter = createFrontMatter(date, title, categories, author);
+    const mdFile = fs.readFileSync(`./output/${pageId}.md`, 'utf8');
+    fs.writeFileSync(`./output/${pageId}.md`, frontMatter + mdFile);
+    await retrieveThenReplaceAllImages(pageId);
+  }
+}
+
+const main = async () => {
+  const pages = await getPages(databaseId);
+  await convertAllToMarkdown(pages);
+}
+
+// Get the page ID from the command line arguments
+const pageId = process.argv[2];
+if (pageId) {
+  // Process a single page
+  (async () => {
+    await convertToMarkdown(pageId);
+    const [date, title, categories, author] = await retrievePageProperties(pageId);
+    const frontMatter = createFrontMatter(date, title, categories, author);
+    const mdFile = fs.readFileSync(`./output/${pageId}.md`, 'utf8');
+    fs.writeFileSync(`./output/${pageId}.md`, frontMatter + mdFile);
+    retrieveThenReplaceAllImages(pageId);
+  })();
+} else {
+  // Process all pages in the database
+  main();
+}
+
