@@ -4,7 +4,10 @@ const { Client } = require("@notionhq/client");
 const { NotionToMarkdown } = require("notion-to-md");
 const slugify = require('slugify');
 
+const https = require('https');
 const fs = require('fs');
+const path = require('path');
+
 const notion = new Client({ auth: process.env.NOTION_TOKEN });
 const n2m = new NotionToMarkdown({ notionClient: notion });
 
@@ -62,10 +65,90 @@ ${categories.map((category) => `  - ${category}`).join('\n')}
 `;
 };
 
+const generateUniqueFilename = (originalPath) => {
+  let basePath = path.dirname(originalPath);
+  let extension = path.extname(originalPath);
+  let name = path.basename(originalPath, extension);
+  let counter = 1;
+
+  // Generate new path with counter until the file does not exist
+  let newPath = originalPath;
+  while (fs.existsSync(newPath)) {
+    newPath = path.join(basePath, `${name}_${counter}${extension}`);
+    counter++;
+  }
+
+  return newPath;
+}
+
+const downloadImage = (url, dest) => new Promise((resolve, reject) => {
+  https.get(url, (response) => {
+    const chunks = [];
+    response.on('data', (chunk) => chunks.push(chunk));
+    response.on('end', async () => { // Make sure this callback is async
+      const buffer = Buffer.concat(chunks);
+      let finalDest = dest;
+
+      if (path.extname(dest) === '') {
+        try {
+          const fileType = await import('file-type');
+          const type = await fileType.fileTypeFromBuffer(buffer); // Adjusted for named export or direct function call
+          const extension = type ? type.ext : '';
+          finalDest += extension ? '.' + extension : '';
+          finalDest = generateUniqueFilename(finalDest);
+          fs.writeFileSync(finalDest, buffer);
+          resolve(finalDest);
+        } catch (error) {
+          console.error('Error processing file type', error);
+          reject(error);
+        }
+      } else {
+        finalDest = generateUniqueFilename(finalDest);
+        fs.writeFileSync(finalDest, buffer);
+        resolve(finalDest);
+      }
+    });
+  }).on('error', (error) => {
+    fs.unlink(dest, () => {});
+    reject(error);
+  });
+});
+
+const retrieveThenReplaceAllImages = async (pageId) => {
+  const imageUrls = [];
+
+  const filePath = `./output/${pageId}.md`;
+  let content = fs.readFileSync(filePath, 'utf8');
+  const regex = /!\[.*\]\((.*)\)/g;
+  let match;
+
+  while ((match = regex.exec(content)) !== null) {
+    imageUrls.push(match[1]);
+  }
+
+  const imageDir = `./output/images/${pageId}/`;
+  fs.mkdirSync(imageDir, { recursive: true });
+
+  for (const url of imageUrls) {
+    let filename = path.basename(url);
+    filename = filename.split('?')[0];
+    const finalDest = await downloadImage(url, path.join(imageDir, filename));
+    filename = path.basename(finalDest);
+
+    content = content.replace(url, `/images/${pageId}/${filename}`);
+  }
+
+  // Write the modified content back to the file
+  fs.writeFileSync(filePath, content);
+
+  return imageUrls;
+}
+
 (async() => {
   await convertToMarkdown(pageId);
   const [date, title, categories, author] = await retrievePageProperties(pageId);
   const frontMatter = createFrontMatter(date, title, categories, author);
   const mdFile = fs.readFileSync(`./output/${pageId}.md`, 'utf8');
   fs.writeFileSync(`./output/${pageId}.md`, frontMatter + mdFile);
+  retrieveThenReplaceAllImages(pageId);
 })();
